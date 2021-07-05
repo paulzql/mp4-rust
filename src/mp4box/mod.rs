@@ -21,6 +21,7 @@
 //!                 stbl
 //!                     stsd
 //!                         avc1
+//!                         hvc1
 //!                         hev1
 //!                         mp4a
 //!                         tx3g
@@ -62,6 +63,7 @@ pub(crate) mod dinf;
 pub(crate) mod edts;
 pub(crate) mod elst;
 pub(crate) mod ftyp;
+pub(crate) mod hvc1;
 pub(crate) mod hev1;
 pub(crate) mod hdlr;
 pub(crate) mod mdhd;
@@ -168,6 +170,7 @@ boxtype! {
     SmhdBox => 0x736d6864,
     Avc1Box => 0x61766331,
     AvcCBox => 0x61766343,
+    Hvc1Box => 0x68766331,
     Hev1Box => 0x68657631,
     HvcCBox => 0x68766343,
     Mp4aBox => 0x6d703461,

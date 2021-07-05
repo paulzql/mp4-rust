@@ -568,6 +568,16 @@ pub struct AvcConfig {
 }
 
 #[derive(Debug, PartialEq, Clone, Default)]
+pub struct HvcConfig {
+    pub width: u16,
+    pub height: u16,
+    pub video_param_sets: Vec<Vec<u8>>,
+    pub seq_param_sets: Vec<Vec<u8>>,
+    pub pic_param_sets: Vec<Vec<u8>>,
+    pub supplementary_enhancement_information: Vec<Vec<u8>>,
+}
+
+#[derive(Debug, PartialEq, Clone, Default)]
 pub struct HevcConfig {
     pub width: u16,
     pub height: u16,
@@ -604,6 +614,7 @@ pub struct TtxtConfig {}
 #[derive(Debug, PartialEq, Clone)]
 pub enum MediaConfig {
     AvcConfig(AvcConfig),
+    HvcConfig(HvcConfig),
     HevcConfig(HevcConfig),
     Vp9Config(Vp9Config),
     AacConfig(AacConfig),
