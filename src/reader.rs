@@ -1,8 +1,9 @@
+use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::time::Duration;
 
-use crate::mp4box::*;
 use crate::*;
+use crate::mp4box::*;
 
 #[derive(Debug)]
 pub struct Mp4Reader<R> {
@@ -10,8 +11,9 @@ pub struct Mp4Reader<R> {
     pub ftyp: FtypBox,
     pub moov: MoovBox,
     pub moofs: Vec<MoofBox>,
+    pub emsgs: Vec<EmsgBox>,
 
-    tracks: Vec<Mp4Track>,
+    tracks: HashMap<u32, Mp4Track>,
     size: u64,
 }
 
@@ -22,6 +24,7 @@ impl<R: Read + Seek> Mp4Reader<R> {
         let mut ftyp = None;
         let mut moov = None;
         let mut moofs = Vec::new();
+        let mut emsgs = Vec::new();
 
         let mut current = start;
         while current < size {
@@ -47,6 +50,10 @@ impl<R: Read + Seek> Mp4Reader<R> {
                     let moof = MoofBox::read_box(&mut reader, s)?;
                     moofs.push(moof);
                 }
+                BoxType::EmsgBox => {
+                    let emsg = EmsgBox::read_box(&mut reader, s)?;
+                    emsgs.push(emsg);
+                }
                 _ => {
                     // XXX warn!()
                     skip_box(&mut reader, s)?;
@@ -64,14 +71,14 @@ impl<R: Read + Seek> Mp4Reader<R> {
 
         let size = current - start;
         let mut tracks = if let Some(ref moov) = moov {
-            let mut tracks = Vec::with_capacity(moov.traks.len());
-            for (i, trak) in moov.traks.iter().enumerate() {
-                assert_eq!(trak.tkhd.track_id, i as u32 + 1);
-                tracks.push(Mp4Track::from(trak));
+            if moov.traks.iter().any(|trak| trak.tkhd.track_id == 0) {
+                return Err(Error::InvalidData("illegal track id 0"));
             }
-            tracks
+            moov.traks.iter()
+                .map(|trak| (trak.tkhd.track_id, Mp4Track::from(trak)))
+                .collect()
         } else {
-            Vec::new()
+            HashMap::new()
         };
 
         // Update tracks if any fragmented (moof) boxes are found.
@@ -85,9 +92,13 @@ impl<R: Read + Seek> Mp4Reader<R> {
 
             for moof in moofs.iter() {
                 for traf in moof.trafs.iter() {
-                    let track_id = traf.tfhd.track_id as usize - 1;
-                    tracks[track_id].default_sample_duration = default_sample_duration;
-                    tracks[track_id].trafs.push(traf.clone());
+                    let track_id = traf.tfhd.track_id;
+                    if let Some(track) = tracks.get_mut(&track_id) {
+                        track.default_sample_duration = default_sample_duration;
+                        track.trafs.push(traf.clone())
+                    } else {
+                        return Err(Error::TrakNotFound(track_id));
+                    }
                 }
             }
         }
@@ -97,6 +108,7 @@ impl<R: Read + Seek> Mp4Reader<R> {
             ftyp: ftyp.unwrap(),
             moov: moov.unwrap(),
             moofs,
+            emsgs,
             size,
             tracks,
         })
@@ -130,16 +142,12 @@ impl<R: Read + Seek> Mp4Reader<R> {
         self.moofs.len() != 0
     }
 
-    pub fn tracks(&self) -> &[Mp4Track] {
+    pub fn tracks(&self) -> &HashMap<u32, Mp4Track> {
         &self.tracks
     }
 
     pub fn sample_count(&self, track_id: u32) -> Result<u32> {
-        if track_id == 0 {
-            return Err(Error::TrakNotFound(track_id));
-        }
-
-        if let Some(track) = self.tracks.get(track_id as usize - 1) {
+        if let Some(track) = self.tracks.get(&track_id) {
             Ok(track.sample_count())
         } else {
             Err(Error::TrakNotFound(track_id))
@@ -147,11 +155,7 @@ impl<R: Read + Seek> Mp4Reader<R> {
     }
 
     pub fn read_sample(&mut self, track_id: u32, sample_id: u32) -> Result<Option<Mp4Sample>> {
-        if track_id == 0 {
-            return Err(Error::TrakNotFound(track_id));
-        }
-
-        if let Some(ref track) = self.tracks.get(track_id as usize - 1) {
+        if let Some(track) = self.tracks.get(&track_id) {
             track.read_sample(&mut self.reader, sample_id)
         } else {
             Err(Error::TrakNotFound(track_id))
